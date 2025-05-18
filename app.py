@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -128,3 +127,4 @@ with tab4:
                 st.pyplot(fig)
         except Exception as e:
             st.error(f"Error loading climatology for {sig}: {e}")
+
