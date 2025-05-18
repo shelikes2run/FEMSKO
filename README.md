@@ -1,6 +1,6 @@
 # FEMS Dispatch Staffing Dashboard
 
-This Streamlit app allows fire and aviation managers to configure and visualize staffing levels using live FEMS index data.
+This Streamlit app allows fire and aviation managers to configure and visualize FEMS NFDRS Outputs/Percentiles, Decision Classes (Staffing, Dispatch, Adjective, SFDI, Severe Fire Danger Index and R5 PAL using live FEMS index data. This is visualization work off of the work Kevin Osborne created.
 
 ## Features
 
