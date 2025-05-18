@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -51,7 +52,7 @@ with tab1:
         station_id = SIG_CONFIGS[sig]["station_id"]
 
         try:
-            url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=all&startDate=2025-05-01&endDate=2025-05-25&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
+            url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=all&startDate=2025-05-14&endDate=2025-05-25&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
             df = pd.read_csv(BytesIO(requests.get(url).content))
             df["sample_date"] = pd.to_datetime(df["sample_date"])
 
@@ -79,7 +80,7 @@ with tab2:
     for sig in selected_sigs:
         station_id = SIG_CONFIGS[sig]["station_id"]
         try:
-            url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=all&startDate=2025-05-01&endDate=2025-05-25&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
+            url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=all&startDate=2025-05-14&endDate=2025-05-25&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
             df = pd.read_csv(BytesIO(requests.get(url).content))
             df["sample_date"] = pd.to_datetime(df["sample_date"])
             st.subheader(f"{sig}")
@@ -107,7 +108,7 @@ with tab4:
     for sig in selected_sigs:
         station_id = SIG_CONFIGS[sig]["station_id"]
         hist_url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=climatology&startDate=2005-01-01&endDate=2022-12-31&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
-        cur_url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=all&startDate=2025-05-01&endDate=2025-05-25&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
+        cur_url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=all&startDate=2025-05-14&endDate=2025-05-25&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
         try:
             df_hist = pd.read_csv(BytesIO(requests.get(hist_url).content))
             df_hist["sample_date"] = pd.to_datetime(df_hist["sample_date"])
@@ -127,4 +128,3 @@ with tab4:
                 st.pyplot(fig)
         except Exception as e:
             st.error(f"Error loading climatology for {sig}: {e}")
-
