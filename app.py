@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -5,104 +6,125 @@ import numpy as np
 from io import BytesIO
 import requests
 
-# Dropdown options from spreadsheet
-fuel_models = ["V - Grass", "W - Grass/Shrub", "X - Brush", "Y - Timber", "Z - Slash"]
-index_options = ["ERC", "BI", "1000hr", "SC"]
-breakpoint_options = ["90/97 percentile", "80/95 percentile", "Custom"]
-class_options = ["3", "4", "5", "6"]
+SIG_CONFIGS = {
+    "SIG 1": {"station_id": 40611, "default_index": "ERC"},
+    "SIG 2": {"station_id": 41001, "default_index": "BI"},
+    "SIG 3": {"station_id": 42201, "default_index": "SC"}
+}
+INDEX_OPTIONS = ["ERC", "BI", "IC", "SC", "KBDI", "100Hr", "1000Hr", "Woody FM", "Herb FM"]
+COLOR_MAP = {1: "green", 2: "yellow", 3: "orange", 4: "red", 5: "purple", 6: "black"}
 
-fems_url = "https://fems.fs2c.usda.gov/fuelmodel/sample/download?returnAll=&responseFormat=csv&siteId=All&sampleId=&startDate=2025-02-23T00:00:00.000Z&endDate=2025-03-25T23:00:00.000Z&filterByFuelId=&filterByStatus=Submitted&filterByCategory=All&filterBySubCategory=All&filterByMethod=All&sortBy=fuel_type&sortOrder=asc"
+def classify(value, breakpoints):
+    for i, bp in enumerate(breakpoints):
+        if value <= bp:
+            return i + 1
+    return len(breakpoints) + 1
 
-st.title("FEMS Dispatch Staffing Dashboard")
+st.title("🔥 Multi-SIG NFDRS Dashboard")
 
-with st.form("sig_form"):
-    st.subheader("SIG Configuration")
+# --- SIG & Index Selection ---
+selected_sigs = st.multiselect("Select SIGs", list(SIG_CONFIGS.keys()), default=["SIG 1"])
+selected_indices = st.multiselect("Select Indices", INDEX_OPTIONS, default=["ERC"])
 
-    sig_selection = st.selectbox("Select SIG:", ["PSA NC02", "Oak Knoll RAWS", "Redding RAWS"])
-    fuel_model = st.selectbox("Fuel Model:", fuel_models)
-    number_of_raws = st.number_input("Number of RAWS:", min_value=1, max_value=50, value=10)
+# --- Percentile Band Selection ---
+band_type = st.selectbox("Select Percentile Band Overlay", ["80/95", "90/97", "Custom"])
+if band_type == "Custom":
+    custom_low = st.number_input("Custom Band Lower", value=70)
+    custom_high = st.number_input("Custom Band Upper", value=90)
+else:
+    custom_low, custom_high = (80, 95) if band_type == "80/95" else (90, 97)
 
-    st.markdown("---")
-    st.subheader("Staffing Level Inputs")
+# --- Breakpoints Input ---
+breakpoints = st.text_input("Breakpoints (comma-separated)", "20,40,60,80")
+try:
+    bp = list(map(int, breakpoints.split(",")))
+except:
+    bp = [20, 40, 60, 80]
+    st.warning("Invalid breakpoints. Default used.")
 
-    staffing_index = st.selectbox("Staffing Index Type:", index_options)
-    staffing_breakpoint = st.selectbox("Staffing Breakpoint:", breakpoint_options)
-    custom_staffing_breakpoint = None
-    if staffing_breakpoint == "Custom":
-        custom_staffing_breakpoint = st.text_input("Enter Custom Breakpoints (comma-separated):")
+# --- Tabs Layout ---
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "📅 Daily Listings", "⚙️ Configuration", "📈 Climatology"])
 
-    st.markdown("---")
-    st.subheader("Dispatch Level Inputs")
+# --- Tab 1: Dashboard with Multi-SIG, Percentile Bands ---
+with tab1:
+    for sig in selected_sigs:
+        st.subheader(f"{sig} Outputs")
+        station_id = SIG_CONFIGS[sig]["station_id"]
 
-    dispatch_index = st.selectbox("Dispatch Index Type:", index_options)
-    number_of_classes = st.selectbox("Number of Dispatch Classes:", class_options)
-    dispatch_breakpoint = st.selectbox("Dispatch Breakpoint:", breakpoint_options)
-    custom_dispatch_breakpoint = None
-    if dispatch_breakpoint == "Custom":
-        custom_dispatch_breakpoint = st.text_input("Enter Custom Dispatch Breakpoints (comma-separated):")
+        try:
+            url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=all&startDate=2025-05-01&endDate=2025-05-25&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
+            df = pd.read_csv(BytesIO(requests.get(url).content))
+            df["sample_date"] = pd.to_datetime(df["sample_date"])
 
-    submitted = st.form_submit_button("Submit")
+            for idx in selected_indices:
+                if idx.lower() not in df.columns.str.lower():
+                    continue
+                col = [c for c in df.columns if c.lower() == idx.lower()][0]
+                df["class"] = [classify(v, bp) for v in df[col]]
 
-if submitted:
-    st.success("Configuration saved!")
+                fig, ax = plt.subplots()
+                ax.bar(df["sample_date"], df[col], color=[COLOR_MAP.get(c, 'gray') for c in df["class"]])
+                ax.axhspan(custom_low, custom_high, color="orange", alpha=0.2, label=f"{custom_low}-{custom_high} percentile")
+                ax.set_title(f"{sig} - {idx}")
+                ax.set_xlabel("Date")
+                ax.set_ylabel(idx)
+                ax.legend()
+                st.pyplot(fig)
 
-    summary_data = {
-        "SIG": [sig_selection],
-        "Fuel Model": [fuel_model],
-        "RAWS Count": [number_of_raws],
-        "Staffing Index": [staffing_index],
-        "Staffing Breakpoint": [custom_staffing_breakpoint if custom_staffing_breakpoint else staffing_breakpoint],
-        "Dispatch Index": [dispatch_index],
-        "Dispatch Classes": [number_of_classes],
-        "Dispatch Breakpoint": [custom_dispatch_breakpoint if custom_dispatch_breakpoint else dispatch_breakpoint]
-    }
-    summary_df = pd.DataFrame(summary_data)
-    st.subheader("Dashboard Summary Table")
-    st.dataframe(summary_df)
+        except Exception as e:
+            st.error(f"Error loading data for {sig}: {e}")
 
-    st.subheader("Observed vs Forecast Graph from FEMS")
+# --- Tab 2: Daily Listings ---
+with tab2:
+    st.header("Daily Listings")
+    for sig in selected_sigs:
+        station_id = SIG_CONFIGS[sig]["station_id"]
+        try:
+            url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=all&startDate=2025-05-01&endDate=2025-05-25&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
+            df = pd.read_csv(BytesIO(requests.get(url).content))
+            df["sample_date"] = pd.to_datetime(df["sample_date"])
+            st.subheader(f"{sig}")
+            st.dataframe(df[["sample_date"] + selected_indices])
+            csv = df[["sample_date"] + selected_indices].to_csv(index=False).encode("utf-8")
+            st.download_button(f"Download CSV for {sig}", data=csv, file_name=f"{sig}_daily_listing.csv", mime="text/csv")
+        except:
+            st.error(f"Could not load daily listing for {sig}")
 
-    try:
-        response = requests.get(fems_url)
-        fems_df = pd.read_csv(BytesIO(response.content))
-        fems_df['sample_date'] = pd.to_datetime(fems_df['sample_date'])
+# --- Tab 3: Configuration ---
+with tab3:
+    st.header("Current Config")
+    config_df = pd.DataFrame([{
+        "SIGs": "; ".join(selected_sigs),
+        "Indices": "; ".join(selected_indices),
+        "Breakpoints": breakpoints,
+        "Percentile Band": f"{custom_low}-{custom_high}"
+    }])
+    st.dataframe(config_df)
+    st.download_button("Download Configuration", data=config_df.to_csv(index=False), file_name="dashboard_config.csv", mime="text/csv")
 
-        # Aggregate observed and forecast for plotting (dummy logic)
-        observed = fems_df.groupby('sample_date')['index_value'].mean()
-        forecast = observed.rolling(window=3, min_periods=1).mean() + 5
-
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(observed.index, observed.values, label="Observed", marker='o')
-        ax.plot(forecast.index, forecast.values, label="Forecast", linestyle='--', marker='x')
-        ax.fill_between(observed.index, 90, 97, color='red', alpha=0.1, label='90-97 Percentile')
-        ax.fill_between(observed.index, 80, 95, color='orange', alpha=0.1, label='80-95 Percentile')
-
-        ax.set_title("Observed and Forecast Index")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Index Value")
-        ax.legend()
-        ax.grid(True)
-
-        st.pyplot(fig)
-
-        output_df = pd.DataFrame({
-            "Date": observed.index,
-            "Observed": observed.values,
-            "Forecast": forecast.values
-        })
-
-        csv = output_df.to_csv(index=False).encode('utf-8')
-        buffer = BytesIO()
-        fig.savefig(buffer, format="png")
-        image_bytes = buffer.getvalue()
-
-        pdf_buffer = BytesIO()
-        fig.savefig(pdf_buffer, format="pdf")
-        pdf_bytes = pdf_buffer.getvalue()
-
-        st.download_button("📥 Download Data as CSV", data=csv, file_name="sig_dashboard_output.csv", mime="text/csv")
-        st.download_button("🖼️ Download Graph as Image", data=image_bytes, file_name="observed_forecast_graph.png", mime="image/png")
-        st.download_button("📄 Download Graph as PDF", data=pdf_bytes, file_name="observed_forecast_graph.pdf", mime="application/pdf")
-
-    except Exception as e:
-        st.error(f"Failed to load or process FEMS data: {e}")
+# --- Tab 4: Climatology Overlay ---
+with tab4:
+    st.header("Climatology Comparison (2005–2022)")
+    for sig in selected_sigs:
+        station_id = SIG_CONFIGS[sig]["station_id"]
+        hist_url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=climatology&startDate=2005-01-01&endDate=2022-12-31&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
+        cur_url = f"https://fems.fs2c.usda.gov/api/climatology/download-nfdr-daily-summary/?dataset=all&startDate=2025-05-01&endDate=2025-05-25&dataFormate=csv&stationIds={station_id}&fuelModels=Y"
+        try:
+            df_hist = pd.read_csv(BytesIO(requests.get(hist_url).content))
+            df_hist["sample_date"] = pd.to_datetime(df_hist["sample_date"])
+            df_obs = pd.read_csv(BytesIO(requests.get(cur_url).content))
+            df_obs["sample_date"] = pd.to_datetime(df_obs["sample_date"])
+            for idx in selected_indices:
+                if idx.lower() not in df_hist.columns.str.lower():
+                    continue
+                col = [c for c in df_hist.columns if c.lower() == idx.lower()][0]
+                fig, ax = plt.subplots()
+                ax.plot(df_hist["sample_date"], df_hist[col], alpha=0.3, label="Historical")
+                ax.plot(df_obs["sample_date"], df_obs[col], label="Observed", color="blue")
+                ax.set_title(f"{sig} - {idx} Climatology")
+                ax.set_xlabel("Date")
+                ax.set_ylabel(idx)
+                ax.legend()
+                st.pyplot(fig)
+        except Exception as e:
+            st.error(f"Error loading climatology for {sig}: {e}")
